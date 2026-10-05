@@ -1,0 +1,126 @@
+name: Build realme GT Neo5 kernel (GKI 5.10.226 + Droidspaces)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/.ghcup /opt/google-chrome /opt/microsoft-msedge
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y repo ccache bc bison ca-certificates curl flex gcc git libssl-dev lld llvm make ninja-build python3 zip patch
+          git config --global user.name "builder"
+          git config --global user.email "builder@localhost"
+
+      - name: Sync ACK GKI build environment (manifest common-android12-5.10)
+        run: |
+          mkdir -p $HOME/ak && cd $HOME/ak
+          repo init --depth=1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10
+          repo sync -c -j$(nproc)
+          ls build/ | head -5
+
+      - name: Replace common with realme GT Neo5 official source (kernel-5.10.226)
+        run: |
+          cd $HOME/ak
+          rm -rf common
+          git clone --depth=1 -b kernel-5.10.226 https://github.com/realme-kernel-opensource/realme_gt_neo5-AndroidV-kernel-source common
+          # 补上与手机 vendor 模块 vermagic 一致的版本串尾巴
+          echo "-o-gca7e70f5a6e7" > common/localversion-oplus
+          # 确保同时编译未压缩 Image（设备 boot 内核段为 raw 格式）
+          sed -i 's/^MAKE_GOALS="${MAKE_GOALS}$/MAKE_GOALS="${MAKE_GOALS}\nImage/' common/build.config.gki.aarch64
+
+      - name: Apply Droidspaces kABI patches (required for 5.10)
+        run: |
+          cd $HOME/ak/common
+          BASE="https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12"
+          ok=""
+          for p in 001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch 001.GKI-below-6.12-fix_sysvipc_kabi_1_2_3.patch 001.GKI-below-6.12-fix_sysvipc_kabi_3_4_5.patch; do
+            echo ">>> 尝试 $p"
+            curl -fsSL -o /tmp/p1.patch "$BASE/$p" || continue
+            if patch -p1 --forward --batch < /tmp/p1.patch; then ok="$p"; break; fi
+            patch -p1 -R --batch < /tmp/p1.patch 2>/dev/null || true
+          done
+          [ -n "$ok" ] || { echo "SYSVIPC kABI 补丁全部应用失败"; exit 1; }
+          echo ">>> SYSVIPC 补丁成功: $ok"
+          curl -fsSL -o /tmp/p2.patch "$BASE/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch"
+          patch -p1 --forward --batch < /tmp/p2.patch
+          echo ">>> POSIX_MQUEUE 补丁成功"
+
+      - name: Enable Droidspaces options in gki_defconfig (kABI-safe list only)
+        run: |
+          cd $HOME/ak/common/arch/arm64/configs
+          # 文档明确警告：不要开启 CFS_BANDWIDTH / CGROUP_PIDS（破坏 kABI）
+          OPTS="CONFIG_SYSVIPC=y CONFIG_POSIX_MQUEUE=y CONFIG_IPC_NS=y CONFIG_PID_NS=y \
+          CONFIG_DEVTMPFS=y CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y \
+          CONFIG_USER_NS=y CONFIG_IP6_NF_NAT=y CONFIG_IP6_NF_TARGET_MASQUERADE=y \
+          CONFIG_NETFILTER_XT_TARGET_REJECT=y CONFIG_NETFILTER_XT_TARGET_LOG=y CONFIG_NETFILTER_XT_MATCH_RECENT=y \
+          CONFIG_IP_SET=y CONFIG_IP_SET_HASH_IP=y CONFIG_IP_SET_HASH_NET=y CONFIG_NETFILTER_XT_SET=y \
+          CONFIG_TMPFS_POSIX_ACL=y CONFIG_TMPFS_XATTR=y"
+          for opt in $OPTS; do
+            name="${opt%%=*}"
+            if grep -qE "^# ${name} is not set" gki_defconfig; then
+              sed -i "s/^# ${name} is not set/${opt}/" gki_defconfig
+              echo "修改: $opt"
+            elif ! grep -qE "^${opt}$" gki_defconfig; then
+              echo "$opt" >> gki_defconfig
+              echo "追加: $opt"
+            else
+              echo "已存在: $opt"
+            fi
+          done
+          echo "=== 确认结果 ==="
+          grep -E "CONFIG_(SYSVIPC|POSIX_MQUEUE|IPC_NS|PID_NS|DEVTMPFS|USER_NS|IP6_NF_NAT|IP6_NF_TARGET_MASQUERADE|NETFILTER_XT_TARGET_REJECT|NETFILTER_XT_TARGET_LOG|NETFILTER_XT_MATCH_RECENT|IP_SET|IP_SET_HASH_IP|IP_SET_HASH_NET|NETFILTER_XT_SET|TMPFS_POSIX_ACL|TMPFS_XATTR|NETFILTER_XT_MATCH_ADDRTYPE)=" gki_defconfig
+
+      - name: Build kernel (build.sh, clang-r416183b)
+        run: |
+          cd $HOME/ak
+          BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+
+      - name: Verify kernel release string against device expectation
+        run: |
+          DIST=$HOME/ak/out/android12-5.10/dist
+          ls -la $DIST | head -30
+          echo "=== 内核内嵌版本串 ==="
+          strings $DIST/Image | grep -m1 "Linux version" || echo "Image 中未找到版本串"
+          EXPECTED="5.10.226-android12-9-o-gca7e70f5a6e7"
+          ACTUAL=$(strings $DIST/Image | grep -oPm1 '5\.10\.\d+-android12-\d+[^ ]*o-[0-9a-f]+' || true)
+          echo "expected: $EXPECTED"
+          echo "actual:   $ACTUAL"
+          if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::warning::内核版本串与设备 vendor 模块 vermagic 不一致，刷入后模块可能拒绝加载"
+          fi
+
+      - name: Fallback build raw Image if missing
+        if: always()
+        run: |
+          DIST=$HOME/ak/out/android12-5.10/dist
+          if [ ! -f $DIST/Image ]; then
+            cd $HOME/ak/common
+            export PATH=$HOME/ak/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$PATH
+            make O=$HOME/ak/out/android12-5.10 ARCH=arm64 Image LLVM=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- -j$(nproc)
+          fi
+          test -f $DIST/Image || (echo "Image 构建失败" && exit 1)
+
+      - name: Publish Image to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DIST=$HOME/ak/out/android12-5.10/dist
+          TAG="v$(date +%Y%m%d-%H%M%S)"
+          cd $DIST
+          gh release create "$TAG" Image Image.lz4 \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "GKI kernel $TAG (5.10.226-android12-9 + Droidspaces)" \
+            --notes "realme GT Neo5 240W (RMX3708) GKI 内核。源码: realme-kernel-opensource kernel-5.10.226 分支 + Droidspaces kABI 补丁（SYSVIPC/POSIX_MQUEUE）+ kABI 安全配置。预期版本串: 5.10.226-android12-9-o-gca7e70f5a6e7。仅用于 fastboot boot 测试，确认可开机后再刷入。"
