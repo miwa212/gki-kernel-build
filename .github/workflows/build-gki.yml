@@ -96,10 +96,14 @@ jobs:
           sys.exit(0)
           PYEOF
 
-          # 5) 修复 realme 树 mm/vmscan.c 缺失的 scan_adjusted 声明（官方开源时的事故，
-          #    上游 5.10 的 shrink_lruvec() 里有 bool scan_adjusted; 声明行被 strip）
-          if ! grep -q 'bool scan_adjusted;' mm/vmscan.c; then
-            sed -i 's|^\tbool proportional_reclaim;$|\tbool proportional_reclaim;\n\tbool scan_adjusted;|' mm/vmscan.c && echo "vmscan.c 已补 scan_adjusted 声明"
+          # 5) 修复 realme 树 mm/vmscan.c 的声明事故（官方开源时 strip）：
+          #    shrink_lruvec() 的 bool scan_adjusted; 声明丢失，而原有的
+          #    bool proportional_reclaim; 全文件零使用（使用代码也被 strip），
+          #    保留会在 -Werror 下报 unused variable（run10 教训），直接替换
+          if grep -q 'bool proportional_reclaim;' mm/vmscan.c; then
+            sed -i 's|^\tbool proportional_reclaim;$|\tbool scan_adjusted;|' mm/vmscan.c && echo "vmscan.c 已将死声明 proportional_reclaim 替换为 scan_adjusted"
+          elif ! grep -q 'bool scan_adjusted;' mm/vmscan.c; then
+            sed -i 's|^\tunsigned long nr_to_reclaim = sc->nr_to_reclaim;$|\tunsigned long nr_to_reclaim = sc->nr_to_reclaim;\n\tbool scan_adjusted;|' mm/vmscan.c && echo "vmscan.c 已补 scan_adjusted 声明"
           fi
 
       - name: Apply Droidspaces kABI patches (required for 5.10)
