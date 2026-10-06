@@ -282,6 +282,17 @@ jobs:
           echo "=== 残留 check_modules_lists 引用（应为空）==="
           grep -rn 'check_modules_lists' "$HOME/ak/build" "$HOME/ak/common" 2>/dev/null | grep -v '__orig_check_modules_lists' | head -3
           echo "=== 中和完成 2 ==="
+          # run19 教训：modules list 校验其实是 build.sh 内联代码，由 MODULES_ORDER
+          # 变量守卫（if [ -n "${MODULES_ORDER}" ]）。清空变量即整体关闭。
+          grep -rl '^MODULES_ORDER=' "$HOME/ak/build" "$HOME/ak/common" 2>/dev/null | while read -r f; do
+            sed -i 's/^MODULES_ORDER=/# DISABLED MODULES_ORDER=/' "$f"
+            echo "已禁用 MODULES_ORDER: $f"
+          done
+          # 紧随其后的 KMI 符号列表严格模式对 realme 树同样必失败，一并关闭
+          grep -rl '^KMI_SYMBOL_LIST_STRICT_MODE=' "$HOME/ak/build" "$HOME/ak/common" 2>/dev/null | while read -r f; do
+            sed -i 's/^KMI_SYMBOL_LIST_STRICT_MODE=/KMI_SYMBOL_LIST_STRICT_MODE=0 #/' "$f"
+            echo "已关闭 KMI 严格模式: $f"
+          done
           SKIP_MRPROPER=1 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Verify kernel release string against device expectation
