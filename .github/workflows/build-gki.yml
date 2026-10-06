@@ -127,6 +127,11 @@ jobs:
                 if line.lstrip().startswith('#') or '+=' not in line:
                   continue
                 lhs, rhs = line.split('+=', 1)
+                # vmlinux 接线变量（core-y += arch/arm64/ 等）路径相对内核根目录，
+                # 不是相对 Makefile 所在目录，绝不能剔除（run16 教训）
+                var = lhs.strip().split(None, 1)[0] if lhs.strip() else ''
+                if var in ('core-y', 'libs-y', 'drivers-y', 'head-y', 'init-y', 'net-y', 'usr-y', 'virt-y'):
+                  continue
                 hash_pos = rhs.find('#')
                 if hash_pos >= 0:
                   code, comment = rhs[:hash_pos], rhs[hash_pos:]
