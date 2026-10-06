@@ -106,6 +106,61 @@ jobs:
             sed -i 's|^\tunsigned long nr_to_reclaim = sc->nr_to_reclaim;$|\tunsigned long nr_to_reclaim = sc->nr_to_reclaim;\n\tbool scan_adjusted;|' mm/vmscan.c && echo "vmscan.c 已补 scan_adjusted 声明"
           fi
 
+          # 6) 自动修复 Makefile/Kbuild 中引用被 strip 目录的 obj 项（run11 教训：
+          #    drivers/soc/oplus/storage/Makefile 缺失但被 obj-y += storage/ 引用）
+          #    目录存在但无 Makefile/Kbuild，或目录不存在，都视为被 strip，从 += 列表中剔除
+          python3 - << 'PYEOF'
+          import os, re
+          root = os.getcwd()
+          total = 0
+          for dirpath, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d != '.git']
+            for fn in files:
+              if fn not in ('Makefile', 'Kbuild'):
+                continue
+              path = os.path.join(dirpath, fn)
+              rel = os.path.relpath(path, root)
+              with open(path, 'r', errors='ignore') as f:
+                lines = f.readlines()
+              changed = False
+              for i, line in enumerate(lines):
+                if line.lstrip().startswith('#') or '+=' not in line:
+                  continue
+                lhs, rhs = line.split('+=', 1)
+                hash_pos = rhs.find('#')
+                if hash_pos >= 0:
+                  code, comment = rhs[:hash_pos], rhs[hash_pos:]
+                else:
+                  code, comment = rhs, ''
+                tokens = code.split()
+                dir_tokens = [t for t in tokens if t.endswith('/') and '$' not in t]
+                if not dir_tokens:
+                  continue
+                kept = []
+                dropped = []
+                for t in tokens:
+                  if t.endswith('/') and '$' not in t:
+                    d = os.path.normpath(os.path.join(dirpath, t.rstrip('/')))
+                    if not (os.path.exists(os.path.join(d, 'Makefile')) or os.path.exists(os.path.join(d, 'Kbuild'))):
+                      dropped.append(t)
+                      continue
+                  kept.append(t)
+                if dropped:
+                  total += len(dropped)
+                  print('FIX %s: 剔除 %s' % (rel, dropped))
+                  kept_suffix = ' ' + comment.strip() if comment.strip() else ''
+                  if kept:
+                    lines[i] = lhs.rstrip() + ' += ' + ' '.join(kept) + kept_suffix + '\n'
+                  else:
+                    lines[i] = '# STRIPPED: ' + line.lstrip()
+                  changed = True
+              if changed:
+                with open(path, 'w') as f:
+                  f.writelines(lines)
+          print('共剔除被 strip 目录引用:', total)
+          sys.exit(0)
+          PYEOF
+
       - name: Apply Droidspaces kABI patches (required for 5.10)
         run: |
           cd $HOME/ak/common
