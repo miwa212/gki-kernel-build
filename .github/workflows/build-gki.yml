@@ -102,7 +102,14 @@ jobs:
       - name: Build kernel (build.sh, clang-r416183b)
         run: |
           cd $HOME/ak
-          BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+          # cc-wrapper stub 复制到 O= 输出目录（OPPO Makefile 用相对路径包装 CC，从 OUT_DIR 解析）
+          mkdir -p out/android12-5.10/scripts/basic
+          cp common/scripts/basic/cc-wrapper out/android12-5.10/scripts/basic/ 2>/dev/null || \
+            { printf '#!/bin/sh\nexec "$@"\n' > out/android12-5.10/scripts/basic/cc-wrapper && chmod +x out/android12-5.10/scripts/basic/cc-wrapper; }
+          # SKIP_MRPROPER：realme 树多处引用被 strip 的私有目录（oplus_binder、kernelFwUpdate 等），
+          # clean 会遍历所有 obj 目录（含未开启 CONFIG 的）导致失败；全新 OUT_DIR 无需 clean，
+          # 编译阶段只处理已启用 CONFIG，不会碰这些目录
+          SKIP_MRPROPER=1 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Verify kernel release string against device expectation
         run: |
