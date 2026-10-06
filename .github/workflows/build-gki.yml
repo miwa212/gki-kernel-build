@@ -59,7 +59,7 @@ jobs:
 
           # 4) 自动修复所有 Kconfig 中 source 不存在文件（被 strip 的私有 Kconfig）
           #    Kconfig 的 source 无论 CONFIG 依赖是否满足都会读文件，缺失即 defconfig 失败
-          "C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.exe" - << 'PYEOF'
+          python3 - << 'PYEOF'
           import os, re, sys
           root = os.getcwd()
           total = 0
