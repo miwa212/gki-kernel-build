@@ -57,6 +57,42 @@ jobs:
           fi
           ls -la scripts/basic/cc-wrapper
 
+          # 4) 自动修复所有 Kconfig 中 source 不存在文件（被 strip 的私有 Kconfig）
+          #    Kconfig 的 source 无论 CONFIG 依赖是否满足都会读文件，缺失即 defconfig 失败
+          "C:/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.exe" - << 'PYEOF'
+          import os, re, sys
+          root = os.getcwd()
+          total = 0
+          for dirpath, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d != '.git']
+            for fn in files:
+              if not fn.startswith('Kconfig'):
+                continue
+              path = os.path.join(dirpath, fn)
+              rel = os.path.relpath(path, root)
+              with open(path, 'r', errors='ignore') as f:
+                lines = f.readlines()
+              changed = False
+              for i, line in enumerate(lines):
+                m = re.match(r'^(\s*)(source|rsource)\s+"?([^"\s]+)"?', line)
+                if not m:
+                  continue
+                p = m.group(3)
+                if '$(' in p:  # 含变量的 source 无法静态解析，跳过
+                  continue
+                full = os.path.normpath(os.path.join(dirpath, p))
+                if not os.path.exists(full):
+                  lines[i] = m.group(1) + '# STRIPPED: ' + line.lstrip()
+                  print('FIX %s:%d source缺失: %s' % (rel, i + 1, p))
+                  changed = True
+                  total += 1
+              if changed:
+                with open(path, 'w') as f:
+                  f.writelines(lines)
+          print('共修复缺失 source:', total)
+          sys.exit(0)
+          PYEOF
+
       - name: Apply Droidspaces kABI patches (required for 5.10)
         run: |
           cd $HOME/ak/common
