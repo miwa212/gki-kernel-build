@@ -158,7 +158,6 @@ jobs:
                 with open(path, 'w') as f:
                   f.writelines(lines)
           print('共剔除被 strip 目录引用:', total)
-          sys.exit(0)
           PYEOF
 
       - name: Apply Droidspaces kABI patches (required for 5.10)
