@@ -175,12 +175,7 @@ jobs:
             s = f.read()
           i = s.find('static inline bool mmget_not_zero')
           j = s.find('}', i)
-          ins = """
-static inline bool mmget_still_valid(const struct mm_struct *mm)
-{
-	return likely(mm->mm_users);
-}
-"""
+          ins = '\nstatic inline bool mmget_still_valid(const struct mm_struct *mm)\n{\n\treturn likely(mm->mm_users);\n}\n'
           s = s[:j+1] + ins + s[j+1:]
           with open(p, 'w') as f:
             f.write(s)
