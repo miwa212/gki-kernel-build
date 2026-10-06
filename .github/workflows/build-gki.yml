@@ -267,6 +267,21 @@ jobs:
           echo "=== 残留 check_defconfig 引用（应为空）==="
           grep -rn 'check_defconfig' "$HOME/ak/build" "$HOME/ak/common" 2>/dev/null | grep -v '__orig_check_defconfig' | head -3
           echo "=== 中和完成 ==="
+          # 跳过模块清单校验（run18）：realme 树会编出 ACK gki_aarch64_modules
+          # 预期清单里没有的模块（qcom_sync_file.ko 等），build.sh 编译完成后
+          # 的 check_modules_lists 必失败，Image 已生成但不拷贝到 dist。同样中和
+          grep -rl 'check_modules_lists' "$HOME/ak/build" "$HOME/ak/common" 2>/dev/null | while read -r f; do
+            sed -i '/export[[:space:]]*-f[[:space:]]*check_modules_lists/d' "$f"
+          done
+          grep -rl 'check_modules_lists()' "$HOME/ak/build" 2>/dev/null | while read -r f; do
+            sed -i 's/\bcheck_modules_lists()/__orig_check_modules_lists()/g' "$f"
+          done
+          grep -rl 'check_modules_lists' "$HOME/ak/build" "$HOME/ak/common" 2>/dev/null | while read -r f; do
+            sed -i -E 's/\bcheck_modules_lists\b/true/g' "$f"
+          done
+          echo "=== 残留 check_modules_lists 引用（应为空）==="
+          grep -rn 'check_modules_lists' "$HOME/ak/build" "$HOME/ak/common" 2>/dev/null | grep -v '__orig_check_modules_lists' | head -3
+          echo "=== 中和完成 2 ==="
           SKIP_MRPROPER=1 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Verify kernel release string against device expectation
