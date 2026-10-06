@@ -40,6 +40,23 @@ jobs:
           # 确保同时编译未压缩 Image（设备 boot 内核段为 raw 格式）
           sed -i 's/^MAKE_GOALS="${MAKE_GOALS}$/MAKE_GOALS="${MAKE_GOALS}\nImage/' common/build.config.gki.aarch64
 
+      - name: Fix stripped proprietary code references (oplus_binder / cc-wrapper)
+        run: |
+          cd $HOME/ak/common
+          # 1) 删除指向 OPPO 私有仓库的悬空 symlink（git clone 后不可用）
+          echo "=== 悬空 symlink ==="
+          find . -xtype l -print -delete
+          # 2) 注释掉 Makefile 中引用已删除目录的行（make clean 会遍历所有 obj 目录，即使 CONFIG 未开启）
+          sed -i 's|^\(obj-.*oplus_binder/\)|# STRIPPED: \1|' drivers/android/Makefile
+          grep -n "oplus_binder" drivers/android/Makefile || true
+          # 3) 重建被 strip 的 cc-wrapper（Makefile 604 行: CC := scripts/basic/cc-wrapper $(CC)），透传即可
+          if ! [ -f scripts/basic/cc-wrapper ] && grep -q "scripts/basic/cc-wrapper" Makefile; then
+            printf '#!/bin/sh\nexec "$@"\n' > scripts/basic/cc-wrapper
+            chmod +x scripts/basic/cc-wrapper
+            echo "cc-wrapper stub 已创建"
+          fi
+          ls -la scripts/basic/cc-wrapper
+
       - name: Apply Droidspaces kABI patches (required for 5.10)
         run: |
           cd $HOME/ak/common
