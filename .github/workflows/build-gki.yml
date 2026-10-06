@@ -166,6 +166,28 @@ jobs:
             sed -i 's|^#include <linux/slab.h>$|#include <linux/slab.h>\n#include <linux/mm.h>|' drivers/thermal/thermal_sysfs.c && echo "thermal_sysfs.c 已补 linux/mm.h"
           fi
 
+          # 8) 补回 ACK 特有的 mmget_still_valid()（realme 树 sched/mm.h 合并时丢失，
+          #    drivers/android/binder_alloc.c:217 使用它；定义来自 ACK android12-5.10）
+          if ! grep -q 'mmget_still_valid' include/linux/sched/mm.h; then
+            python3 - << 'PYEOF'
+          p = 'include/linux/sched/mm.h'
+          with open(p) as f:
+            s = f.read()
+          i = s.find('static inline bool mmget_not_zero')
+          j = s.find('}', i)
+          ins = """
+static inline bool mmget_still_valid(const struct mm_struct *mm)
+{
+	return likely(mm->mm_users);
+}
+"""
+          s = s[:j+1] + ins + s[j+1:]
+          with open(p, 'w') as f:
+            f.write(s)
+          print('sched/mm.h 已补 mmget_still_valid')
+          PYEOF
+          fi
+
       - name: Apply Droidspaces kABI patches (required for 5.10)
         run: |
           cd $HOME/ak/common
