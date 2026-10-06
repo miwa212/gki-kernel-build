@@ -160,6 +160,12 @@ jobs:
           print('共剔除被 strip 目录引用:', total)
           PYEOF
 
+          # 7) 修复 drivers/thermal/thermal_sysfs.c 缺 <linux/mm.h> 包含
+          #    （kvzalloc/kvfree 隐式声明，realme 树该文件 include 列表不全）
+          if ! grep -q 'linux/mm.h' drivers/thermal/thermal_sysfs.c; then
+            sed -i 's|^#include <linux/slab.h>$|#include <linux/slab.h>\n#include <linux/mm.h>|' drivers/thermal/thermal_sysfs.c && echo "thermal_sysfs.c 已补 linux/mm.h"
+          fi
+
       - name: Apply Droidspaces kABI patches (required for 5.10)
         run: |
           cd $HOME/ak/common
