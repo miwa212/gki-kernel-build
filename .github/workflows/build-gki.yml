@@ -80,8 +80,11 @@ jobs:
                 p = m.group(3)
                 if '$(' in p:  # 含变量的 source 无法静态解析，跳过
                   continue
+                # Kconfig 语义：先按当前文件目录找，找不到回退内核根目录（srctree）
+                # 两个位置都不存在才算被 strip，否则会误删合法 source（run8 教训：
+                # arch/arm64/Kconfig 的 source "arch/Kconfig" 被误删，丢失 64BIT/HZ）
                 full = os.path.normpath(os.path.join(dirpath, p))
-                if not os.path.exists(full):
+                if not os.path.exists(full) and not os.path.exists(os.path.join(root, p)):
                   lines[i] = m.group(1) + '# STRIPPED: ' + line.lstrip()
                   print('FIX %s:%d source缺失: %s' % (rel, i + 1, p))
                   changed = True
