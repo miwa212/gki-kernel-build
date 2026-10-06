@@ -188,6 +188,16 @@ jobs:
           PYEOF
           fi
 
+          # 9) 禁用 LTO：thin-LTO 链接内存超出 GitHub runner（7GB RAM），OOM 被 kill（run17 教训）
+          #    realme 出厂内核不用 LTO；vermagic 不含 LTO 标记，不影响设备模块加载
+          for f in arch/arm64/configs/gki_defconfig arch/arm64/configs/gki_defconfig_fragment; do
+            if [ -f "$f" ]; then
+              sed -i '/CONFIG_LTO_CLANG/d' "$f"
+              grep -q 'CONFIG_LTO_NONE=y' "$f" || echo 'CONFIG_LTO_NONE=y' >> "$f"
+              echo "LTO 已禁用: $f"
+            fi
+          done
+
       - name: Apply Droidspaces kABI patches (required for 5.10)
         run: |
           cd $HOME/ak/common
