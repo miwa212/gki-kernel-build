@@ -300,7 +300,11 @@ jobs:
           #   LOCALVERSION 顺序颠倒 + scmversion + git dirty）
           DEF=common/arch/arm64/configs/gki_defconfig
           sed -i '/^CONFIG_LOCALVERSION=/d;/^# CONFIG_LOCALVERSION_AUTO is not set/d;/^CONFIG_LOCALVERSION_AUTO=y/d' "$DEF"
-          printf 'CONFIG_LOCALVERSION="-android12-9-o-gca7e70f5a6e7"\n# CONFIG_LOCALVERSION_AUTO is not set\n' >> "$DEF"
+          printf 'CONFIG_LOCALVERSION="-o-gca7e70f5a6e7"\n# CONFIG_LOCALVERSION_AUTO is not set\n' >> "$DEF"
+          # setlocalversion 拼接顺序（run22 实证）：localversion* 文件在前、CONFIG_LOCALVERSION
+          # 在后。文件放 -android12-9（要拼在前），CONFIG 放 -o-gca7e70f5a6e7（拼在后）
+          # → 5.10.226-android12-9-o-gca7e70f5a6e7
+          echo "-android12-9" > common/localversion-oplus
           echo "defconfig 版本串已对齐"
           # build.config 里的 LOCALVERSION 追加会插在错误位置，注释掉（只动 build.config* 文件，
           # 且模式带 ^/空格/分号 前缀，避开 CONFIG_LOCALVERSION）
@@ -310,8 +314,10 @@ jobs:
           done
           # 提交全部 fixup 使 git 树干净，消除 -dirty / + 后缀
           cd "$HOME/ak/common" && git add -A && (git -c user.email=builder@localhost -c user.name=builder commit -m "build fixups" >/dev/null || true) && git log --oneline -1
-          # 回到构建根目录（上一行 cd 进了 common/，build.sh 的相对路径从 ak/ 解析）
-          cd "$HOME/ak" && SKIP_MRPROPER=1 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+          # 回到构建根目录（上一行 cd 进了 common/，build.sh 的相对路径从 ak/ 解析）。
+          # LOCALVERSION= 置空但"已设置"：setlocalversion 只在 LOCALVERSION 未设置时
+          # 才追加 scm_version --short（dirty 树产生 + 后缀），置空可彻底关闭该分支
+          cd "$HOME/ak" && LOCALVERSION= SKIP_MRPROPER=1 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Verify kernel release string against device expectation
         run: |
