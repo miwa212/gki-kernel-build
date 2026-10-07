@@ -326,7 +326,7 @@ jobs:
           echo "=== 内核内嵌版本串 ==="
           strings $DIST/Image | grep -m1 "Linux version" || echo "Image 中未找到版本串"
           EXPECTED="5.10.226-android12-9-o-gca7e70f5a6e7"
-          ACTUAL=$(strings $DIST/Image | grep -oPm1 '5\.10\.\d+-android12-\d+[^ ]*o-[0-9a-f]+' || true)
+          ACTUAL=$(strings $DIST/Image | grep -oPm1 '5\.10\.\d+-android12-\d+[^ ]*o-[0-9a-g]+' || true)
           echo "expected: $EXPECTED"
           echo "actual:   $ACTUAL"
           if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$EXPECTED" ]; then
